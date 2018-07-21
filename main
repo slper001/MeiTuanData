@@ -85,23 +85,6 @@ simulateIeBrowserData = {
     # 'Cookie':'client-id=d0a2d543-599c-4572-b6af-a5c240708969; uuid=6975d571-71f5-4b4c-839b-3a938b4b3b78',
     'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.79 Safari/537.36 Edge/14.14393'
 }
-# 代理服务器
-proxyHost = "http-dyn.abuyun.com"
-proxyPort = "9020"
-# 代理隧道验证信息
-proxyUser = "HO8Z3K19F1A4O79D"
-proxyPass = "17BBF21892423841"
-
-proxyMeta = "http://%(user)s:%(pass)s@%(host)s:%(port)s" % {
-      "host" : proxyHost,
-      "port" : proxyPort,
-      "user" : proxyUser,
-      "pass" : proxyPass,
-    }
-proxies = {
-    "http": proxyMeta,
-    "https": proxyMeta,
-}
 # 获取一个POI的店铺列表信息
 def get_POI_shops(url):
     try:
