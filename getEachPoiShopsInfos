@@ -1,0 +1,196 @@
+"""
+@author: 机器灵砍菜刀
+"""
+########################################################################################################################
+# 此程序为美团外卖获取分商圈店铺详细信息的入口，在mainEntrance.py执行之后放在相应根目录下执行
+########################################################################################################################
+import requests
+import json
+from lxml import etree
+import pandas as pd
+import re
+import math
+
+simulateChromeBrowserData = {
+    'Accept':'*/*',
+    'Accept-Encoding':'gzip, deflate',
+    'Accept-Language':'zh-CN,zh;q=0.8',
+    'Connection':'keep-alive',
+    'Host':'sz.meituan.com',
+    'Referer':'http://sz.meituan.com/meishi/',
+    # 'Cookie': '_lxsdk_cuid=16212a00d8ec8-07cdb6596bad8e-178123e-1fa400-16212a00d8fc8; lat=22.780886; lng=113.906362; client-id=34908f62-ea11-4211-b60a-f62c32288b2e; uuid=9be4f96971ac4c9cab4c.1520730903.1.0.0; webloc_geo=22.527181%2C113.938582%2Cwgs84; ci=30; _lxsdk=16212a1cddfc8-011369480302e7-178123e-1fa400-16212a1cddfc8; __mta=247430459.1520730902128.1520731016684.1520731025187.5; _lxsdk_s=16212a00d8f-c83-6e-376%7C%7C9',
+    'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.91 Safari/537.36'
+}
+simulateIeBrowserData = {
+    'Accept':'*/*',
+    'Accept-Encoding':'gzip, deflate',
+    'Accept-Language':'zh-Hans-CN, zh-Hans; q=0.5',
+    '':'',
+}
+
+# 获得店铺详细页html信息
+def getShopHtml(shop_url):
+    try:
+        response = requests.get(shop_url, headers=simulateChromeBrowserData, timeout=2)
+        if response.status_code == 200:
+            if response.text:
+                return response.text
+            else:
+                print('店铺详细页信息获取为空')
+                return getShopHtml(shop_url)
+        if response.status_code == 403:
+            print('服务器拒绝访问店铺详细页')
+            return getShopHtml(shop_url)
+        else:
+            print('读取店铺详细页状态码%d'%response.status_code)
+            return getShopHtml(shop_url)
+    except Exception as e:
+        print('获取店铺详细页网络尝试出错', e)
+        return getShopHtml(shop_url)
+# 解析店铺详细页Html,应该有三种选择，根据xpath解析、正则解析和bs4解析，这里正则比较好点
+def parseShopHtml(html):
+    html = str(html)
+    pattern = re.compile('"detailInfo":(.*?),"photos"', re.S)
+    # 注意，有些店铺已经消失了，所以需要判断是否是回到了美团主界面
+    if re.search(pattern, html):
+        detailInfos = re.search(pattern, html).group(1)
+    else:
+        return False
+    # 将解析到的字符串转为字典
+    detailInfo_dict = json.loads(detailInfos)
+    shopId = detailInfo_dict.get('poiId')
+    shopName = detailInfo_dict.get('name')
+    longitude = detailInfo_dict.get('longitude')
+    avgScore = detailInfo_dict.get('avgScore')
+    latitude = detailInfo_dict.get('latitude')
+    openTime = detailInfo_dict.get('openTime')
+    address = detailInfo_dict.get('address')
+    phone = detailInfo_dict.get('phone')
+    avgPrice = detailInfo_dict.get('avgPrice')
+    shopInfos = pd.DataFrame(
+        {'shopId': [shopId], 'shopName': [shopName], 'longitude': [longitude], 'avgScore': [avgScore],
+         'latitude': [latitude], 'openTime': [openTime], 'address': [address], 'phone': [phone],
+         'avgPrice': [avgPrice]})
+    shopInfos.to_csv('./{0}S.csv'.format(shopId), index=False)
+    return True
+# 获得店铺评论Json页信息
+def getCommentJson(url):
+    try:
+        response = requests.get(url,headers =  simulateChromeBrowserData, timeout=2)
+        if response.status_code == 200:
+            if response.text:
+                return response.text
+            else:
+                print('返回评论页信息为空')
+                return getCommentJson(url)
+        if response.status_code == 403:
+            print('服务器拒绝访问店铺评论页信息')
+            return getCommentJson(url)
+        else:
+            print('服务器响应状态码%d'%response.status_code)
+            return getCommentJson(url)
+    except Exception as e:
+        print('尝试获取店铺评论页信息网络连接出错',e)
+        return getCommentJson(url)
+
+# 解析店铺评论页Json，获得一共有多少评论页信息
+def getShopCommentPageNum(firstPageCommentJson):
+    try:
+        data = json.loads(firstPageCommentJson)
+        if 'data' in data.keys():
+            if 'total' in data.get('data'):
+                totalCommentNum = data.get('data').get('total')
+                pageNum = math.ceil(totalCommentNum / 10)
+                return pageNum, totalCommentNum
+            else:
+                return 1, 0
+        return 1, 0
+    except Exception as e:
+        return -1, 0
+
+# 解析每一页店铺评论页Json，获得每页评论信息
+def parseCommentJson(commentPageJson):
+    try:
+        data = json.loads(commentPageJson)
+        pageData = pd.DataFrame()
+        if 'data' in data.keys():
+            if 'comments' in data.get('data'):
+                for eachCommentInfo in data.get('data').get('comments'):
+                    userName = eachCommentInfo.get('userName')
+                    avgPrice = eachCommentInfo.get('avgPrice')
+                    comment = eachCommentInfo.get('comment')
+                    commentTime = eachCommentInfo.get('commentTime')
+                    userLevel = eachCommentInfo.get('userLevel')
+                    userId = eachCommentInfo.get('userId')
+                    commentStar = eachCommentInfo.get('star')
+                    dealEndtime = eachCommentInfo.get('dealEndtime')
+                    pageData = pageData.append(
+                        pd.DataFrame({'userName': [userName], 'avgPrice': [avgPrice], 'comment': [comment],
+                                      'commentTime': [commentTime], 'userLevel': [userLevel], 'userId': [userId],
+                                      'commentStar': [commentStar], 'dealEndtime': [dealEndtime]}))
+        return pageData, 1
+    except:
+        print('JsonDecode出错')
+        return 1, 0
+# 防止评论页数目解析失败
+def getRightpageNumber(url):
+    shop_comment_json = getCommentJson(url)
+    pageNum, totalCommentNum = getShopCommentPageNum(firstPageCommentJson=shop_comment_json)
+    if pageNum == -1:
+        print('重新解析评论页数目')
+        return getRightpageNumber(url)
+    else:
+        return pageNum,totalCommentNum
+# 防止未知错误，解析失败
+def getNpageInfo(url):
+    shopComentPageJson = getCommentJson(url)
+    onePageData,rightOrNot = parseCommentJson(shopComentPageJson)
+    if rightOrNot == 1:
+        return onePageData
+    else:
+        print('重新获取评论页信息')
+        return getNpageInfo(url)
+# 解决店铺是否存在问题
+def shopExit(url):
+    shopHtml = getShopHtml(shop_url=url)
+    do = parseShopHtml(html=shopHtml)
+    if do:
+        return True
+    else:
+        print('店铺存在问题')
+        return shopExit(url)
+if __name__ == '__main__':
+    shopsData = pd.read_csv('poiShopsData.csv', encoding='ISO-8859-1')
+    shopIds = list(shopsData.shopId)
+    shopCounts = 0
+    completeShop = 0
+    for shopId in shopIds:
+        completeShop += 1
+        if completeShop > 0:
+            shop_url = 'http://www.meituan.com/meishi/{0}/'.format(shopId)
+            print(shop_url)
+            do = shopExit(shop_url)
+            if do:
+                first_page_comment_url = 'http://www.meituan.com/meishi/api/poi/getMerchantComment?id={0}&userId=0&offset=0&pageSize=10&sortType=1'.format(
+                    shopId)
+                pageNum, totalCommentNum = getRightpageNumber(first_page_comment_url)
+                sumInfoData = pd.read_csv('./{0}S.csv'.format(shopId), encoding='gbk')
+                sumInfoData['totalCommentNum'] = totalCommentNum
+                sumInfoData.to_csv('./{0}S.csv'.format(shopId), index=False)
+                shopData = pd.DataFrame()
+                print('编号为{0}的店铺一共有{1}页评论信息'.format(shopId, pageNum))
+                for i in range(0, pageNum):
+                    print('正在抓取第{0}个店铺的第{1}页评论信息......'.format(shopCounts + 1, i + 1))
+                    pageComentUrl = 'http://www.meituan.com/meishi/api/poi/getMerchantComment?id={0}&userId=0&offset={1}&pageSize=10&sortType=1'.format(
+                        shopId, i*10)
+                    onePageData = getNpageInfo(pageComentUrl)
+                    shopData = shopData.append(onePageData)
+                shopData.to_csv('./{0}.csv'.format(shopId), index=False)
+                shopCounts += 1
+                print('已成功爬取%d个店铺信息' % shopCounts)
+            else:
+                print('当前id店铺已经消失（永远进不了的条件，懒得改了）')
+                continue
+
+
+
