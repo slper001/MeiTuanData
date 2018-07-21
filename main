@@ -1,0 +1,172 @@
+"""
+@author: 机器灵砍菜刀
+"""
+########################################################################################################################
+# 此程序为美团外卖获取分商圈店铺信息的入口
+########################################################################################################################
+'''
+POI编码列表
+福田区：
+    香蜜湖：b1056；梅林：b744；上沙/下沙：b1055；华强南：b2008；八卦岭/园岭：b742；华强北：b741；
+    皇岗/水围：b743；新城市广场：b756；CBD中心区：b1054；车公庙：b6595；景田：b6596；新洲/石厦：b6597；
+    竹子林：b6974；市民中心：b6975；连城/中心城：b7992；会展中心：b7993；岗厦：b7994；福田保税区：b7996
+罗湖区：
+    罗湖区政府：b747；国贸：b6976；东门：b745；莲塘：b758；笋岗：b2009；翠竹路沿线：b748；宝安南路沿线：b746；
+    火车站：b757；万象城：b6598；喜荟城/水库：b6599；地王大厦：b7659；黄贝岭：b8469；春风万佳/文锦渡：b8470；
+    布心/太白路：b8471；田贝/水贝：b8790；银湖/泥岗：b8794；新秀/罗芳：b8795；梧桐山：b13080；KK mall：b14095
+南山区：
+    南头：b751；华侨城：b750；蛇口：b749；南油：b1057；科技园：b1058；西丽：b1059；南山中心区：b4811；
+    海岸城/保利：b6591；前海：b6592；白石洲：b6593；欢乐海岸：b6594；太古城：b7597；花园城：b7599；海上世界：b13109；
+    世界之窗：b23117；南山京基百纳：b25152；深圳湾：b36635
+宝安区：
+    西乡：b6587；新安：b6586；石岩：b6585；宝安中心区：b752；港隆城：b4653；沙井：b6588；福永：b6589；
+    松岗：b7684；公明：b7685；海雅缤纷城：b7719；固戍：b7735；桃源居：b8006；锦绣江南：b9327；时代城：b14404；
+    罗田/燕川：b17088；西田：b17089；圳美：b17091；田寮/长圳：b17092；沙井京基百纳：b23524；宝立方：b27275；
+    宝安机场：b36634；光明新区：b37084
+龙岗区：
+    罗岗/求水山：b753；龙岗中心城：b1062；五和/民营市场：b6600；平湖：b6601；横岗：b7656；南联：b7663；坪地：b7664；
+    大运：b8472；李郎聚星商城：b9013；较场尾/大鹏所城：b13335；水头：b13358；东涌：b13359；万科广场/世贸：b13361；
+    华南城/奥特莱斯：b13412；大芬/南岭：b18069；双龙：b18228；慢城/三联：b19456；布吉街/东站/天虹：b19457；
+    天虹/坂田/杨美：b26297；岗头/万科/雪象：b26298；华为坂田基地：b35919；杨梅坑/桔钓沙：b36519；葵涌：b36520；
+    官湖：b36530；西涌：b36531；坪山高铁站：b36636
+龙华新区：
+    龙华：b1061；民治：b6584；观澜：b7721；大浪：b7722；梅林关：b9326；深圳北站：b36633
+盐田区：
+    盐田区政府：b1060；大小梅沙：b754；沙头角：b755；东部华侨城：b8789；盐田海鲜食街：b8796；壹海城：b15349
+南澳大鹏新区：
+    南澳：b7658
+坪山新区：
+    坪山：b6602；坑梓/竹坑：b23429
+'''
+########################################################################################################################
+'''
+例：这是福田香蜜湖（美食）的入口链接
+http://sz.meituan.com/meishi/b1056/
+这是商铺展示页的入口链接（XHR）
+http://sz.meituan.com/meishi/api/poi/getPoiList?cityName=%E6%B7%B1%E5%9C%B3&cateId=0&areaId=1056&sort=&dinnerCountAttrId=&page=1
+这是每一个店铺的入口链接
+http://www.meituan.com/meishi/1776678/
+这是每一个店铺的评论页入口链接（XHR）
+http://www.meituan.com/meishi/api/poi/getMerchantComment?id=1776678&userId=0&offset=0&pageSize=10&sortType=1
+美团美食区域界面是ajax布局，因此入口在于POI的Id编码，同时XHR中的含有商家数量，通过数量获得页数
+评论页同样是ajax，评论页的关键点在于知道评论数的多少，然后通过评论数获取评论页数
+'''
+import requests
+import json
+import math
+import pandas as pd
+import os
+
+simulateBrowserData = {
+    'Accept':'*/*',
+    'Accept-Encoding':'gzip, deflate',
+    'Accept-Language':'zh-CN,zh;q=0.8',
+    'Connection':'keep-alive',
+    'Host':'sz.meituan.com',
+    'Referer':'http://sz.meituan.com/meishi/b1056/pn1/',
+    'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.91 Safari/537.36'
+}
+simulateBrowser = {
+    'Accept':'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+    'Accept-Encoding':'gzip, deflate',
+    'Accept-Language':'zh-CN,zh;q=0.8',
+    'Cache-Control':'max-age=0',
+    'Connection':'keep-alive',
+    'Host':'sz.meituan.com',
+    'Upgrade-Insecure-Requests':'1',
+    'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/61.0.3163.91 Safari/537.36'
+}
+simulateIeBrowserData = {
+    'Accept':'text/html, application/xhtml+xml, image/jxr, */*',
+    'Accept-Encoding':'gzip, deflate',
+    'Accept-Language':'zh-Hans-CN, zh-Hans; q=0.5',
+    'Connection':'Keep-Alive',
+    'Host':'sz.meituan.com',
+    # 'Cookie':'client-id=d0a2d543-599c-4572-b6af-a5c240708969; uuid=6975d571-71f5-4b4c-839b-3a938b4b3b78',
+    'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.79 Safari/537.36 Edge/14.14393'
+}
+# 代理服务器
+proxyHost = "http-dyn.abuyun.com"
+proxyPort = "9020"
+# 代理隧道验证信息
+proxyUser = "HO8Z3K19F1A4O79D"
+proxyPass = "17BBF21892423841"
+
+proxyMeta = "http://%(user)s:%(pass)s@%(host)s:%(port)s" % {
+      "host" : proxyHost,
+      "port" : proxyPort,
+      "user" : proxyUser,
+      "pass" : proxyPass,
+    }
+proxies = {
+    "http": proxyMeta,
+    "https": proxyMeta,
+}
+# 获取一个POI的店铺列表信息
+def get_POI_shops(url):
+    try:
+        response = requests.get(url,headers = simulateBrowserData)
+        if response.status_code==200:
+            if response.text:
+                return response.text
+            else:
+                print('POI店铺列表信息返回为空')
+                return get_POI_shops(url)
+        if response.status_code==403:
+            print('服务器拒绝访问店铺列表页面')
+            return get_POI_shops(url)
+    except Exception as e:
+        print('获取网络连接出错',e)
+        return get_POI_shops(url)
+# 解析POI店铺第一页的JSON返回结果,获得一共有多少页店铺页面
+def get_shop_pages(poi_Shops_Json):
+    data = json.loads(poi_Shops_Json)
+    if 'data' in data.keys():
+        if 'totalCounts' in data.get('data'):
+            shopCounts = data.get('data').get('totalCounts')
+            # 美图一页是展示32个商铺
+            pageNum = math.ceil(shopCounts/32)
+            return pageNum
+        else:
+            return 1
+    return 1
+# 解析POI每一页店铺页的json数据，获得该页各店铺的概述信息，以及该店铺的ID
+def parse_POI_Shops_Json(shop_json):
+    data = json.loads(str(shop_json))
+    one_page_data = pd.DataFrame()
+    if 'data' in data.keys():
+        if 'poiInfos' in data.get('data'):
+            for eachShopInfo in data.get('data').get('poiInfos'):
+                shopId = eachShopInfo.get('poiId')
+                shopName = eachShopInfo.get('title')
+                avgScore = eachShopInfo.get('avgScore')
+                allCommentNum = eachShopInfo.get('allCommentNum')
+                address = eachShopInfo.get('address')
+                avgPrice = eachShopInfo.get('avgPrice')
+                one_page_data = one_page_data.append(pd.DataFrame({'shopId':[shopId],'shopName':[shopName],'avgScore':[avgScore],
+                                                   'allCommentNum':[allCommentNum],'address':[address],'avgPrice':[avgPrice]}))
+    return one_page_data
+
+if __name__ == '__main__':
+    searchArea = '福田区'
+    searchPoiName = '福田保税区'
+    searchPoiId = '7996'
+    cwd = os.getcwd()
+    if not os.path.exists(cwd + '\\' + searchArea):
+        os.makedirs(cwd + '\\' + searchArea)
+    if not os.path.exists(cwd + '\\' + searchArea + '\\' + searchPoiName):
+        os.mkdir(cwd + '\\' + searchArea + '\\' + searchPoiName)
+    url = 'http://sz.meituan.com/meishi/api/poi/getPoiList?cityName=%E6%B7%B1%E5%9C%B3&cateId=0&areaId={0}&sort=&dinnerCountAttrId=&page=1'.format(searchPoiId)
+    poi_Shops_Json = get_POI_shops(url)
+    # print(poi_Shops_Json)
+    pageNum = get_shop_pages(poi_Shops_Json=poi_Shops_Json)
+    print('{0}{1}一共有{2}页店铺信息'.format(searchArea,searchPoiName,pageNum))
+    poiShopData = pd.DataFrame()
+    for i in range(1, pageNum+1):
+        shop_json_url = 'http://sz.meituan.com/meishi/api/poi/getPoiList?cityName=%E6%B7%B1%E5%9C%B3&cateId=0&areaId={0}&sort=&dinnerCountAttrId=&page={1}'.format(searchPoiId, i)
+        shop_json = get_POI_shops(shop_json_url)
+        print('获取第%d页' % i)
+        onePageData = parse_POI_Shops_Json(shop_json=shop_json)
+        poiShopData = poiShopData.append(onePageData)
+    save_path = cwd + '\\' + searchArea + '\\' + searchPoiName + '\\'
+    poiShopData.to_csv(save_path + 'poiShopsData.csv', index=False)
